@@ -1,0 +1,177 @@
+services:
+  postgres:
+    image: postgres:15
+    container_name: postgres
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./postgres/postgres.conf:/etc/postgresql/postgresql.conf
+    command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf"]
+    networks:
+      - cdc-network
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: zookeeper
+    restart: always
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    networks:
+      - cdc-network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka
+    restart: always
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: ${KAFKA_BROKER_ID}
+      KAFKA_ZOOKEEPER_CONNECT: ${KAFKA_ZOOKEEPER_CONNECT}
+      KAFKA_ADVERTISED_LISTENERS: ${KAFKA_ADVERTISED_LISTENERS}
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: ${KAFKA_LISTENER_SECURITY_PROTOCOL_MAP}
+      KAFKA_INTER_BROKER_LISTENER_NAME: ${KAFKA_INTER_BROKER_LISTENER_NAME}
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: ${KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR}
+    networks:
+      - cdc-network
+
+  connect:
+    image: confluentinc/cp-kafka-connect:7.5.0
+    container_name: connect
+    restart: always
+    depends_on:
+      - kafka
+      - postgres
+    ports:
+      - "8083:8083"
+    environment:
+      CONNECT_BOOTSTRAP_SERVERS: ${CONNECT_BOOTSTRAP_SERVERS}
+      CONNECT_GROUP_ID: ${CONNECT_GROUP_ID}
+      CONNECT_CONFIG_STORAGE_TOPIC: ${CONNECT_CONFIG_STORAGE_TOPIC}
+      CONNECT_OFFSET_STORAGE_TOPIC: ${CONNECT_OFFSET_STORAGE_TOPIC}
+      CONNECT_STATUS_STORAGE_TOPIC: ${CONNECT_STATUS_STORAGE_TOPIC}
+
+      CONNECT_KEY_CONVERTER: ${CONNECT_KEY_CONVERTER}
+      CONNECT_VALUE_CONVERTER: ${CONNECT_VALUE_CONVERTER}
+      CONNECT_KEY_CONVERTER_SCHEMAS_ENABLE: ${CONNECT_KEY_CONVERTER_SCHEMAS_ENABLE}
+      CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE: ${CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE}
+
+      CONNECT_REST_ADVERTISED_HOST_NAME: ${CONNECT_REST_ADVERTISED_HOST_NAME}
+      CONNECT_PLUGIN_PATH: ${CONNECT_PLUGIN_PATH}
+
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
+    volumes:
+      - ./connect/plugins:/etc/kafka-connect/jars
+    networks:
+      - cdc-network
+
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    restart: always
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - cdc-network
+
+  minio-client:
+    image: minio/mc:latest
+    container_name: minio-client
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      sleep 10;
+      mc alias set local http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD};
+      mc mb -p local/${MINIO_BUCKET};
+      mc anonymous set none local/${MINIO_BUCKET};
+      exit 0;
+      "
+    networks:
+      - cdc-network
+
+  iceberg-rest:
+    image: tabulario/iceberg-rest:latest
+    container_name: iceberg-rest
+    restart: always
+    depends_on:
+      - minio
+      - minio-client
+    ports:
+      - "8181:8181"
+    environment:
+      CATALOG_WAREHOUSE: s3://${MINIO_BUCKET}/
+      CATALOG_IO__IMPL: org.apache.iceberg.aws.s3.S3FileIO
+      CATALOG_S3_ENDPOINT: http://minio:9000
+      CATALOG_S3_PATH__STYLE__ACCESS: "true"
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      AWS_REGION: us-east-1
+    networks:
+      - cdc-network
+
+  spark:
+    image: apache/spark:3.5.1
+    container_name: spark
+    restart: always
+    depends_on:
+      - kafka
+      - iceberg-rest
+      - minio
+    environment:
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      AWS_REGION: us-east-1
+    ports:
+      - "7077:7077"
+      - "8080:8080"
+    volumes:
+      - ./spark/jobs:/opt/spark/jobs
+    command: >
+      /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
+    networks:
+      - cdc-network
+
+  trino:
+    image: trinodb/trino:latest
+    container_name: trino
+    restart: always
+    depends_on:
+      - iceberg-rest
+      - minio
+    ports:
+      - "8085:8080"
+    volumes:
+      - ./trino/etc/catalog:/etc/trino/catalog
+    networks:
+      - cdc-network
+
+volumes:
+  postgres_data:
+  minio_data:
+
+networks:
+  cdc-network:
+    driver: bridge

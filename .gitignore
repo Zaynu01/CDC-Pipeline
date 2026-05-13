@@ -1,0 +1,106 @@
+# =========================
+# Environment / secrets
+# =========================
+.env
+.env.*
+!.env.example
+Final-Project.pdf
+
+# =========================
+# Docker / local runtime
+# =========================
+**/docker-data/
+**/data/
+**/volumes/
+*.pid
+
+# =========================
+# PostgreSQL local data
+# =========================
+postgres_data/
+pgdata/
+postgres/data/
+
+# =========================
+# MinIO / object storage data
+# =========================
+minio_data/
+minio/data/
+warehouse/
+*.parquet
+*.metadata.json
+*.avro
+
+# =========================
+# Spark generated files
+# =========================
+spark/checkpoints/
+spark/warehouse/
+spark/metastore_db/
+spark/.ivy2/
+spark/.cache/
+checkpoint/
+checkpoints/
+metastore_db/
+derby.log
+
+# =========================
+# Iceberg generated table files
+# =========================
+metadata/
+snapshots/
+manifests/
+*.orc
+
+# =========================
+# Kafka / Connect generated data
+# =========================
+kafka-data/
+zookeeper-data/
+connect-offsets/
+connect-status/
+connect-configs/
+
+# =========================
+# Logs
+# =========================
+*.log
+logs/
+*.out
+*.err
+
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+.ipynb_checkpoints/
+
+# =========================
+# OS / IDE files
+# =========================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# =========================
+# Large connector/plugin files
+# =========================
+connect/plugins/
+*.jar
+*.zip
+*.tar
+*.tar.gz
+
+# =========================
+# Temporary files
+# =========================
+tmp/
+temp/
+*.tmp
+*.bak

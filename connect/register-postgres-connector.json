@@ -1,0 +1,20 @@
+{
+  "name": "postgres-cdc-connector",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "database.hostname": "postgres",
+    "database.port": "5432",
+    "database.user": "replicator",
+    "database.password": "replicatorpass",
+    "database.dbname": "cdcdb",
+    "database.server.name": "postgres",
+    "plugin.name": "pgoutput",
+    "publication.name": "dbz_publication",
+    "slot.name": "debezium_slot",
+    "table.include.list": "public.orders",
+    "topic.prefix": "postgres",
+    "schema.include.list": "public",
+    "include.schema.changes": "false",
+    "decimal.handling.mode": "double"
+  }
+}   
